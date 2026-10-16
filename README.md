@@ -229,8 +229,9 @@ Verified on: Noctalia 5.3.0 · Hyprland 0.56.2 (Lua config) · `luajit` 2.1.
 
 - No network access, no credentials, no telemetry, no file writes outside Noctalia's
   own plugin state.
-- The only external process is `hyprctl`, invoked with an **argument array** (never a
-  shell string).
+- The only external process is `hyprctl`. The move is invoked with an **argument array**
+  (never a shell string); the snapshot alone uses one **static** shell command with no
+  interpolated input.
 - The generated dispatcher expression is built from a **numeric** workspace id and a
   monitor name that is escaped (backslash, quote, LF, CR), so a crafted monitor name
   cannot inject Lua.

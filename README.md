@@ -7,7 +7,7 @@ from one monitor to another — pick up the number and drop it on the other scre
 
 ![plugin api](https://img.shields.io/badge/plugin%20api-26-informational)
 ![license](https://img.shields.io/badge/license-MIT-blue)
-![tests](https://img.shields.io/badge/tests-299%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)
 
 </div>
 
@@ -46,8 +46,9 @@ and the workspace (with all its windows) moves there.
 - **Inline feedback** — success, "already on this monitor", and full compositor errors
   are reported in the panel's status line (and written to the Noctalia log on failure).
 - **Bilingual** out of the box (English, Russian).
-- **No shells, no surprises**: the compositor is queried once per refresh and the move
-  is dispatched through `hyprctl` with an argument array.
+- **No periodic polling of your config, no surprises**: the compositor is queried once
+  per refresh with a single static shell command, and the move is dispatched through
+  `hyprctl` with an **argument array** (never a shell string).
 
 ## Requirements
 
@@ -62,7 +63,8 @@ and the workspace (with all its windows) moves there.
 > dispatchers no longer exist — `hyprctl dispatch moveworkspacetomonitor 2 DP-2` is
 > rewritten to `return hl.dispatch(moveworkspacetomonitor 2 DP-2)` and fails to parse.
 > This plugin therefore dispatches the Lua form. On a classic (non-Lua) Hyprland build
-> the move will report `Invalid dispatcher`; see [Limitations](#limitations).
+> the move fails and the compositor's own error text is shown in the panel's status
+> line; see [Limitations](#limitations).
 
 ## Installation
 
@@ -88,6 +90,19 @@ end = ["workspace_dnd"]
 Then reload: `noctalia msg config-reload`.
 
 The widget is optional — you can also bind the panel directly (see below).
+
+### Alternative: right-click the built-in workspaces widget
+
+The `workspaces` widget reserves only `left`, so `right` is free to bind. No extra
+widget on the bar is needed:
+
+```toml
+# ~/.config/noctalia/config.toml
+[widget.workspaces.actions]
+right = "panel-toggle thegalkin/workspace-dnd:panel"
+```
+
+Right-clicking the workspace number now opens the drag & drop panel.
 
 ### Alternative: run from a checkout (development)
 
@@ -161,8 +176,9 @@ flowchart LR
    one of `invalid-drop` / `unknown-workspace` / `unknown-monitor` / `same-monitor`.
    A valid plan is dispatched as
    `hyprctl dispatch 'hl.dsp.workspace.move({ workspace = 2, monitor = "DP-2" })'`.
-5. **Verify** — `hyprctl` reports failures as `warning: …` on **stdout** while still
-   exiting `0`, so `dispatchFailure` decides success from the output text, not the code.
+5. **Verify** — a success prints exactly `ok` on **stdout** (exit `0`), while a failure prints
+   `warning: …` on stdout and *still* exits `0`, so `dispatchFailure` decides success from the
+   output text rather than the exit code.
 
 ### Why a panel (and not the bar)?
 
@@ -199,7 +215,7 @@ without reading the implementation.
 ## Development
 
 ```sh
-make test       # 299 black-box assertions across three suites (luajit)
+make test       # 367 black-box assertions across three suites (luajit)
 make package    # dist/workspace-dnd-1.0.0.tar.gz + SHA256SUMS
 make install    # register this checkout as a Noctalia plugin source and enable it
 ```
@@ -221,8 +237,8 @@ Verified on: Noctalia 5.3.0 · Hyprland 0.56.2 (Lua config) · `luajit` 2.1.
 
 ## Limitations
 
-- **Hyprland (Lua dispatcher API) only.** Legacy-dispatcher builds will report
-  `Invalid dispatcher`. A dual-mode fallback is a candidate for a future release.
+- **Hyprland (Lua dispatcher API) only.** Legacy-dispatcher builds fail with the
+  compositor's own error text. A dual-mode fallback is a candidate for a future release.
 - A workspace can only be dropped onto a monitor that currently exists.
 - Special workspaces (`id <= 0`, `special:*`) are hidden and cannot be dragged.
 - Dropping a workspace onto the monitor it is already on is a no-op, reported as such.

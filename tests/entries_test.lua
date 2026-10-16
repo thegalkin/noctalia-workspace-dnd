@@ -147,6 +147,8 @@ local function newState(cfg)
     glyphs = {},
     tooltips = {},
     decodeMap = {},
+    logs = {},           -- noctalia.log(msg)
+    runAsyncResult = true,
   }
 end
 
@@ -177,10 +179,13 @@ _G.noctalia = {
   },
   runAsync = function(cmd, cb)
     state.runcalls[#state.runcalls + 1] = { cmd = cmd, cb = cb }
-    return true
+    return state.runAsyncResult ~= false
   end,
   togglePanel = function(id)
     state.toggles[#state.toggles + 1] = id
+  end,
+  log = function(msg)
+    state.logs[#state.logs + 1] = msg
   end,
 }
 
@@ -285,6 +290,25 @@ local function trKeySet()
   local s = {}
   for _, t in ipairs(state.trcalls) do s[t.key] = true end
   return s
+end
+
+local function trKeyPresent(key)
+  for _, t in ipairs(state.trcalls) do if t.key == key then return true end end
+  return false
+end
+
+local function findAll(root, pred)
+  local out = {}
+  if root == nil then return out end
+  for _, n in ipairs(collectAll(root)) do
+    if pred(n) then out[#out + 1] = n end
+  end
+  return out
+end
+
+local function latestCb()
+  local call = state.runcalls[#state.runcalls]
+  return call and call.cb or nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -511,6 +535,240 @@ do
       refresh ~= nil and refresh.cmd == M.snapshotCommand(),
       M.snapshotCommand(), refresh and refresh.cmd or "no refresh")
   end
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel: fetch whose halves decode to non-tables -> status.parse_failed, no model
+-- (and no stale zones left over from a previous successful fetch).
+-- ---------------------------------------------------------------------------
+do
+  openPanel({ show_counts = true })
+  driveSnapshot(GOOD_STDOUT)
+  check("precondition: good fetch renders one drop zone per monitor",
+    lastRoot() ~= nil and #findDropZones(lastRoot()) == #MONITORS, #MONITORS,
+    lastRoot() and #findDropZones(lastRoot()) or "no tree")
+
+  -- "null" / "5" decode to non-table values, so M.buildModel must refuse them
+  -- (spec rule 1: both inputs must be tables).
+  state.decodeMap["null"] = "null"
+  state.decodeMap["5"] = 5
+  local built = M.buildModel(state.decodeMap["null"], state.decodeMap["5"])
+  check("precondition: non-table halves cannot build a model", built == nil,
+    "nil", built)
+
+  if type(_G.onRefreshClicked) == "function" then pcall(_G.onRefreshClicked) end
+  local cb = latestCb()
+  local ok = pcall(cb, { exitCode = 0, stdout = "null" .. "\n" .. M.SEP .. "\n" .. "5" })
+  check("panel build-failure fetch callback runs without error", ok, "no error", ok)
+
+  local root = lastRoot()
+  check("panel build failure renders no drop zones (no stale model)",
+    root ~= nil and #findDropZones(root) == 0, 0,
+    root and #findDropZones(root) or "no tree")
+  check("panel build failure sets status.parse_failed",
+    trKeyPresent("status.parse_failed"), "tr('status.parse_failed')", state.trcalls)
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel: cross-monitor drop FAILURE reporting (stdout warning / non-zero exit).
+-- ---------------------------------------------------------------------------
+do
+  openPanel({ show_counts = false })
+  driveSnapshot(GOOD_STDOUT)
+  local runsBefore = #state.runcalls
+  local logsBefore = #state.logs
+  local ok = pcall(_G.onDrop, M.wsPayload(7), M.dropValue("DP-2"))
+  check("panel drop-failure (stdout warning) drop runs without error", ok, "no error", ok)
+
+  local dispatch = state.runcalls[runsBefore + 1]
+  check("panel drop-failure (stdout warning) issues a dispatch runAsync", dispatch ~= nil,
+    runsBefore + 1, #state.runcalls)
+  if dispatch and type(dispatch.cb) == "function" then
+    local runsAtCb = #state.runcalls
+    local ok2 = pcall(dispatch.cb, { exitCode = 0, stdout = "warning: Workspace not found", stderr = "" })
+    check("panel drop failure (stdout warning) callback runs without error", ok2, "no error", ok2)
+    check("panel drop failure (stdout warning) sets status.failed",
+      trKeyPresent("status.failed"), "tr('status.failed')", state.trcalls)
+    check("panel drop failure (stdout warning) calls noctalia.log",
+      #state.logs > logsBefore, "> " .. logsBefore, #state.logs)
+    check("panel drop failure (stdout warning) still triggers a refresh",
+      #state.runcalls > runsAtCb, "> " .. runsAtCb, #state.runcalls)
+  end
+end
+
+do
+  openPanel({ show_counts = false })
+  driveSnapshot(GOOD_STDOUT)
+  local runsBefore = #state.runcalls
+  local logsBefore = #state.logs
+  pcall(_G.onDrop, M.wsPayload(7), M.dropValue("DP-2"))
+  local dispatch = state.runcalls[runsBefore + 1]
+  check("panel drop-failure (exit 7) issues a dispatch runAsync", dispatch ~= nil,
+    runsBefore + 1, #state.runcalls)
+  if dispatch and type(dispatch.cb) == "function" then
+    local ok2 = pcall(dispatch.cb, { exitCode = 7, stdout = "", stderr = "" })
+    check("panel drop failure (exit 7) callback runs without error", ok2, "no error", ok2)
+    check("panel drop failure (exit 7) sets status.failed",
+      trKeyPresent("status.failed"), "tr('status.failed')", state.trcalls)
+    check("panel drop failure (exit 7) calls noctalia.log",
+      #state.logs > logsBefore, "> " .. logsBefore, #state.logs)
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel: cross-monitor drop SUCCESS reporting (empty result -> status.moved).
+-- ---------------------------------------------------------------------------
+do
+  openPanel({ show_counts = false })
+  driveSnapshot(GOOD_STDOUT)
+  local runsBefore = #state.runcalls
+  pcall(_G.onDrop, M.wsPayload(7), M.dropValue("DP-2"))
+  local dispatch = state.runcalls[runsBefore + 1]
+  check("panel drop-success issues a dispatch runAsync", dispatch ~= nil,
+    runsBefore + 1, #state.runcalls)
+  if dispatch and type(dispatch.cb) == "function" then
+    local runsAtCb = #state.runcalls
+    local ok2 = pcall(dispatch.cb, { exitCode = 0, stdout = "", stderr = "" })
+    check("panel successful drop callback runs without error", ok2, "no error", ok2)
+    check("panel successful drop sets status.moved",
+      trKeyPresent("status.moved"), "tr('status.moved')", state.trcalls)
+    check("panel successful drop does not set status.failed",
+      not trKeyPresent("status.failed"), "no tr('status.failed')", state.trcalls)
+    check("panel successful drop triggers a further refresh",
+      #state.runcalls > runsAtCb, "> " .. runsAtCb, #state.runcalls)
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel: header buttons and onCloseClicked -> panel.close() exactly once.
+-- ---------------------------------------------------------------------------
+do
+  openPanel({ show_counts = true })
+  driveSnapshot(GOOD_STDOUT)
+  local root = lastRoot() -- capture the rendered tree before closing
+
+  check("panel defines onCloseClicked", type(_G.onCloseClicked) == "function",
+    "function", type(_G.onCloseClicked))
+  local closedBefore = state.closed
+  if type(_G.onCloseClicked) == "function" then
+    local ok = pcall(_G.onCloseClicked)
+    check("panel onCloseClicked runs without error", ok, "no error", ok)
+  end
+  check("panel onCloseClicked calls panel.close exactly once",
+    state.closed - closedBefore == 1, 1, state.closed - closedBefore)
+
+  check("panel rendered a tree for header inspection", root ~= nil, "tree", root)
+  if root then
+    local buttons = findAll(root, function(n) return n.name == "button" end)
+    local hasClose, hasRefresh = false, false
+    for _, b in ipairs(buttons) do
+      if b.props.onClick == "onCloseClicked" then hasClose = true end
+      if b.props.onClick == "onRefreshClicked" then hasRefresh = true end
+    end
+    check("panel header has a button whose onClick == 'onCloseClicked'", hasClose,
+      "onCloseClicked", #buttons .. " button node(s)")
+    check("panel header has a button whose onClick == 'onRefreshClicked'", hasRefresh,
+      "onRefreshClicked", #buttons .. " button node(s)")
+    check("panel header contains the title label", textsInclude(root, "TR:title"),
+      "TR:title", collectTexts(root))
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel: runAsync returning false -> error status + re-render.
+-- ---------------------------------------------------------------------------
+do
+  loadPanel({ show_counts = true })
+  state.runAsyncResult = false
+  local ok = pcall(_G.onOpen, { id = "panel" })
+  check("panel onOpen with runAsync=false runs without error", ok, "no error", ok)
+  check("panel fetch runAsync=false sets status.query_failed",
+    trKeyPresent("status.query_failed"), "tr('status.query_failed')", state.trcalls)
+  check("panel fetch runAsync=false still re-renders",
+    #state.renders >= 1, ">= 1 render", #state.renders)
+end
+
+do
+  openPanel({ show_counts = false })
+  driveSnapshot(GOOD_STDOUT)
+  local rendersBefore = #state.renders
+  state.runAsyncResult = false
+  local ok = pcall(_G.onDrop, M.wsPayload(7), M.dropValue("DP-2"))
+  check("panel dispatch with runAsync=false runs without error", ok, "no error", ok)
+  check("panel dispatch runAsync=false sets status.failed",
+    trKeyPresent("status.failed"), "tr('status.failed')", state.trcalls)
+  check("panel dispatch runAsync=false re-renders",
+    #state.renders > rendersBefore, "> " .. rendersBefore, #state.renders)
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel: fetch query_failed path (non-zero exit / nil result) -> no model.
+-- ---------------------------------------------------------------------------
+do
+  openPanel({ show_counts = true })
+  driveSnapshot(GOOD_STDOUT)
+  local cb = state.runcalls[1].cb
+  local ok = pcall(cb, { exitCode = 1 })
+  check("panel fetch exitCode=1 callback runs without error", ok, "no error", ok)
+  check("panel fetch exitCode=1 sets status.query_failed",
+    trKeyPresent("status.query_failed"), "tr('status.query_failed')", state.trcalls)
+  check("panel fetch exitCode=1 renders no model",
+    lastRoot() ~= nil and #findDropZones(lastRoot()) == 0, 0,
+    lastRoot() and #findDropZones(lastRoot()) or "no tree")
+end
+
+do
+  openPanel({ show_counts = true })
+  driveSnapshot(GOOD_STDOUT)
+  local cb = state.runcalls[1].cb
+  local ok = pcall(cb, nil)
+  check("panel fetch nil result callback runs without error", ok, "no error", ok)
+  check("panel fetch nil result sets status.query_failed",
+    trKeyPresent("status.query_failed"), "tr('status.query_failed')", state.trcalls)
+  check("panel fetch nil result renders no model",
+    lastRoot() ~= nil and #findDropZones(lastRoot()) == 0, 0,
+    lastRoot() and #findDropZones(lastRoot()) or "no tree")
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel: onDrop with a planMove error that is not same-monitor -> status.no_target.
+-- ---------------------------------------------------------------------------
+do
+  openPanel({ show_counts = false })
+  driveSnapshot(GOOD_STDOUT)
+  local model = M.buildModel(MONITORS, WORKSPACES)
+  local plan, err = M.planMove(model, "bogus", M.dropValue("DP-2"))
+  check("precondition: malformed payload yields 'invalid-drop'",
+    plan == nil and err == "invalid-drop", "nil, 'invalid-drop'",
+    tostring(plan) .. ", " .. tostring(err))
+  check("precondition: M.statusKey('invalid-drop') == 'status.no_target'",
+    M.statusKey(err) == "status.no_target", "status.no_target", M.statusKey(err))
+
+  local runsBefore = #state.runcalls
+  local rendersBefore = #state.renders
+  local ok = pcall(_G.onDrop, "bogus", M.dropValue("DP-2"))
+  check("panel invalid-drop runs without error", ok, "no error", ok)
+  check("panel invalid-drop runs no command", #state.runcalls == runsBefore,
+    runsBefore, #state.runcalls)
+  check("panel invalid-drop sets status from M.statusKey(err) (= status.no_target)",
+    trKeyPresent("status.no_target"), "tr('status.no_target')", state.trcalls)
+  check("panel invalid-drop re-renders", #state.renders > rendersBefore,
+    "> " .. rendersBefore, #state.renders)
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel: onClose suppresses renders from in-flight fetch callbacks.
+-- ---------------------------------------------------------------------------
+do
+  openPanel({ show_counts = true })
+  local cb = state.runcalls[1].cb
+  local ok = pcall(_G.onClose)
+  check("panel onClose runs without error", ok, "no error", ok)
+  local rendersBefore = #state.renders
+  local ok2 = pcall(cb, { exitCode = 0, stdout = GOOD_STDOUT })
+  check("panel fetch callback after onClose runs without error", ok2, "no error", ok2)
+  check("panel fetch callback after onClose does not render",
+    #state.renders == rendersBefore, rendersBefore, #state.renders)
 end
 
 -- ---------------------------------------------------------------------------

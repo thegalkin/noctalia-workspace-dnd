@@ -15,7 +15,9 @@ Noctalia surface. The draggable item is the workspace's number ("циферка"
   `hyprctl dispatch 'hl.dsp.workspace.move({ workspace = <id>, monitor = "<monitor>" })'`
   Verified against the live compositor: a bad workspace yields
   `warning: Workspace not found` **on stdout** with **exit code 0**, so the exit code alone
-  cannot be used to detect failure.
+  cannot be used to detect failure. A *successful* dispatch prints exactly `ok` on stdout
+  with exit code 0 (verified live with a same-monitor no-op move, which leaves the layout
+  untouched).
 - Plugin files live at `<source-root>/workspace-dnd/` (id part after `/` must match the dir).
 
 ## Entries
@@ -182,7 +184,8 @@ Host APIs the entries may call (harness must stub exactly these):
 - `require("<path>.luau")` — resolves a sibling module; in a harness any `require` may be
   mapped to `dofile("workspace-dnd/lib/model.luau")`.
 - `noctalia.tr(key, subst?)`, `noctalia.getConfig(key)`, `noctalia.json.decode(text)`,
-  `noctalia.runAsync(cmdOrArgv, callback) -> boolean`, `noctalia.togglePanel(id)`.
+  `noctalia.runAsync(cmdOrArgv, callback) -> boolean`, `noctalia.togglePanel(id)`,
+  `noctalia.log(msg)` (the panel logs a line when a drop fails).
 - `ui.*` constructors return an opaque node; the harness may return a table that records
   the props/children it was given.
 - `panel.render(node)`, `panel.close()`.

@@ -1,0 +1,27 @@
+{
+  "title": "Workspaces",
+  "empty": "No workspaces",
+  "refresh": "Refresh",
+  "close": "Close",
+  "drag": {
+    "tooltip": "Drag onto another monitor"
+  },
+  "widget": {
+    "tooltip": "Workspaces: drag one onto another monitor"
+  },
+  "settings": {
+    "show_counts": {
+      "label": "Show window counts",
+      "description": "Append each workspace's open-window count"
+    }
+  },
+  "status": {
+    "moving": "Moving workspace {workspace} to {monitor}…",
+    "moved": "Workspace {workspace} → {monitor}",
+    "same_monitor": "That workspace is already on this monitor",
+    "no_target": "Drop a workspace onto another monitor's column",
+    "query_failed": "Could not read workspaces from hyprctl",
+    "parse_failed": "Bad compositor data: {error}",
+    "failed": "Move failed: {detail}"
+  }
+}

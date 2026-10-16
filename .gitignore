@@ -1,0 +1,15 @@
+# build output
+dist/
+*.tar.gz
+*.tar.zst
+*.zip
+SHA256SUMS
+
+# editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# local scratch
+*.log

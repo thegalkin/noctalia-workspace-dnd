@@ -1,0 +1,33 @@
+id = "thegalkin/workspace-dnd"
+name = "Workspace DnD"
+version = "1.0.0"
+plugin_api = 26
+author = "thegalkin"
+license = "MIT"
+dependencies = ["hyprctl"]
+tags = ["workspaces", "monitors", "hyprland", "drag"]
+icon = "layout-grid"
+description = "Drag a workspace onto another monitor to move it there (Hyprland)."
+
+# Bar button that opens the drag & drop panel.
+[[widget]]
+id = "open"
+entry = "widget.luau"
+
+# The drag & drop surface. Noctalia allows drag sources only inside panels,
+# so the interactive part lives here.
+[[panel]]
+id = "panel"
+entry = "panel.luau"
+width = 660
+height = 440
+placement = "floating"
+position = "center"
+
+# Shared by every entry.
+[[setting]]
+key = "show_counts"
+type = "bool"
+label_key = "settings.show_counts.label"
+description_key = "settings.show_counts.description"
+default = true

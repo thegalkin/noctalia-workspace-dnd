@@ -1,0 +1,12 @@
+[[plugin]]
+id           = "thegalkin/workspace-dnd"
+name         = "Workspace DnD"
+version      = "1.0.0"
+author       = "thegalkin"
+license      = "MIT"
+icon         = "layout-grid"
+description  = "Drag a workspace onto another monitor to move it there (Hyprland)."
+deprecated   = false
+plugin_api   = 26
+tags         = ["workspaces", "monitors", "hyprland", "drag"]
+dependencies = ["hyprctl"]
